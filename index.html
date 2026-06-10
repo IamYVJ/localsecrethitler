@@ -66,8 +66,6 @@
     <section id="viewGame" class="view hidden">
       <!-- Public board -->
       <div id="board" class="board"></div>
-      <!-- Personal role chip -->
-      <div id="roleChip"></div>
       <!-- Contextual action panel -->
       <div id="action" class="action"></div>
       <!-- Event log -->
@@ -82,6 +80,17 @@
 
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Sticky peek button (only during a game) -->
+  <div id="peekBar" class="peek-bar hidden">
+    <button id="peekBtn" class="peek-btn">Hold to view your secret role</button>
+  </div>
+
+  <!-- Private role reveal overlay (shown only while peeking) -->
+  <div id="roleReveal" class="role-reveal hidden">
+    <div id="roleRevealInner" class="role-reveal-inner"></div>
+    <div class="role-reveal-hint">Release to hide</div>
+  </div>
 
   <!-- Rules modal -->
   <div id="rulesModal" class="modal hidden">

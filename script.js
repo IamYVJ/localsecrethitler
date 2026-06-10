@@ -813,11 +813,11 @@
       you: null,
     };
 
-    // Election: how many still need to vote (count only, no who)
+    // Election: who still needs to vote (names only — never which way they voted)
     if (S.phase === "election") {
       const living = livingKeys();
-      const voted = living.filter((k) => S.votes[k]).length;
-      snap.voteWaiting = { voted, total: living.length };
+      const pending = living.filter((k) => !S.votes[k]);
+      snap.voteWaiting = { voted: living.length - pending.length, total: living.length, pending };
     }
     // Reveal votes during result phase
     if (S.phase === "electionResult" && S.lastVotes) {
@@ -923,6 +923,7 @@
     if (!publicState) return;
     if (publicState.phase === "lobby") { show("viewLobby"); renderLobby(); }
     else { show("viewGame"); }
+    updatePeekUI();
   }
 
   /* ============================================================
@@ -962,9 +963,9 @@
   function renderGame() {
     if (!publicState || publicState.phase === "lobby") return;
     renderBoard();
-    renderRoleChip();
     renderAction();
     renderLog();
+    updatePeekUI();
   }
 
   function renderBoard() {
@@ -1050,10 +1051,10 @@
     }).join("");
   }
 
-  function renderRoleChip() {
-    const you = publicState.you;
-    const el = $("roleChip");
-    if (!you || !you.role || publicState.phase === "gameover") { el.innerHTML = ""; return; }
+  // Build the (private) role card markup. The role is never shown on the main
+  // screen — it is only rendered into the peek overlay while the button is held.
+  function roleCardHTML(you) {
+    if (!you || !you.role) return "";
     const roleNames = { liberal: "Liberal", fascist: "Fascist", hitler: "Hitler" };
     const icon = { liberal: "L", fascist: "F", hitler: "H" }[you.role];
     let sub = "";
@@ -1065,7 +1066,7 @@
     if (you.knownAllies && you.knownAllies.length) {
       allies = `<div class="role-sub">Allies: ${you.knownAllies.map((a) => `${esc(a.name)} <i>(${a.label})</i>`).join(", ")}</div>`;
     }
-    el.innerHTML = `
+    return `
       <div class="role-card ${you.role}">
         <div class="role-icon">${icon}</div>
         <div class="role-text">
@@ -1074,6 +1075,26 @@
           ${allies}
         </div>
       </div>`;
+  }
+
+  // Show/hide the sticky peek button depending on whether we are in a live game.
+  function updatePeekUI() {
+    const you = publicState && publicState.you;
+    const inGame = !!(you && you.role && publicState.phase !== "lobby" && publicState.phase !== "gameover");
+    document.body.classList.toggle("in-game", inGame);
+    $("peekBar").classList.toggle("hidden", !inGame);
+    if (!inGame) hideRolePeek();
+  }
+
+  function showRolePeek() {
+    const you = publicState && publicState.you;
+    if (!you || !you.role) return;
+    $("roleRevealInner").innerHTML = roleCardHTML(you);
+    $("roleReveal").classList.remove("hidden");
+  }
+  function hideRolePeek() {
+    const r = $("roleReveal");
+    if (r) r.classList.add("hidden");
   }
 
   /* ---------------- action panel (phase machine, client view) ---------------- */
@@ -1116,8 +1137,8 @@
     if (you.ready) {
       el.innerHTML = waitingPanel("Setup", "Role memorised", "Waiting for everyone to be ready…");
     } else {
-      el.innerHTML = panel("Setup", "This is your secret role",
-        "Memorise it. Tap below once you've got it — the game begins when everyone is ready.",
+      el.innerHTML = panel("Setup", "Check your secret role",
+        "Hold the <b>“view your secret role”</b> button at the bottom of the screen to see your role privately. Memorise it, then tap below — the game begins when everyone is ready.",
         `<button class="btn btn-primary" id="aReady">I've memorised my role</button>`);
       $("aReady").onclick = () => dispatch({ t: "ready" });
     }
@@ -1140,17 +1161,22 @@
   }
 
   function panelElection(el, S, you) {
-    const wait = S.voteWaiting ? `${S.voteWaiting.voted}/${S.voteWaiting.total} voted` : "";
+    const w = S.voteWaiting;
+    const wait = w ? `${w.voted}/${w.total} voted` : "";
+    const pendingNames = (w && w.pending || []).map((k) => esc(nameOf(k)));
+    const stillOut = pendingNames.length
+      ? `<div class="wait-names">Waiting on: ${pendingNames.join(", ")}</div>`
+      : `<div class="wait-names">All votes are in…</div>`;
     const presN = esc(nameOf(S.presidentKey));
     const chanN = esc(nameOf(S.nomineeKey));
     if (!you.alive) {
       el.innerHTML = waitingPanel("Vote", "Election under way",
-        `Government: ${presN} / ${chanN}. ${wait}`);
+        `Government: ${presN} / ${chanN}. ${wait}${stillOut}`);
       return;
     }
     if (you.hasVoted) {
       el.innerHTML = waitingPanel("Vote", "Vote cast",
-        `You voted <b>${you.myVote === "ja" ? "Ja" : "Nein"}</b>. Waiting… ${wait}`);
+        `You voted <b>${you.myVote === "ja" ? "Ja" : "Nein"}</b>. ${wait}${stillOut}`);
       return;
     }
     el.innerHTML = panel("Vote", "Elect this government?",
@@ -1158,7 +1184,7 @@
       `<div class="vote-row">
         <button class="vote-btn ja" id="vJa">Ja</button>
         <button class="vote-btn nein" id="vNein">Nein</button>
-      </div>`);
+      </div>${stillOut}`);
     $("vJa").onclick = () => dispatch({ t: "vote", vote: "ja" });
     $("vNein").onclick = () => dispatch({ t: "vote", vote: "nein" });
   }
@@ -1297,7 +1323,6 @@
       <div class="reveal-roles">${roles}</div>
       <div class="panel-actions" style="margin-top:20px">${actions}</div>
     </div>`;
-    $("roleChip").innerHTML = "";
     if (you.isHost) $("aAgain").onclick = () => dispatch({ t: "playAgain" });
   }
 
@@ -1377,6 +1402,9 @@
     peer = null; isHost = false; myKey = null; roomCode = null;
     hostState = null; hostConn = null; publicState = null;
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    document.body.classList.remove("in-game");
+    $("peekBar").classList.add("hidden");
+    hideRolePeek();
     showHome();
   }
 
@@ -1417,6 +1445,29 @@
   $("codeInput").addEventListener("input", (e) => {
     e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   });
+
+  // Hold-to-peek: the secret role is shown only while the button is pressed.
+  (function wirePeek() {
+    const btn = $("peekBtn");
+    const press = (e) => { e.preventDefault(); showRolePeek(); };
+    const release = () => hideRolePeek();
+    btn.addEventListener("pointerdown", press);
+    btn.addEventListener("pointerup", release);
+    btn.addEventListener("pointerleave", release);
+    btn.addEventListener("pointercancel", release);
+    // Fallbacks for browsers without pointer events
+    btn.addEventListener("touchstart", press, { passive: false });
+    btn.addEventListener("touchend", release);
+    btn.addEventListener("mousedown", press);
+    btn.addEventListener("mouseup", release);
+    btn.addEventListener("mouseleave", release);
+    btn.addEventListener("contextmenu", (e) => e.preventDefault());
+    // Tapping the dark overlay also hides it (safety net).
+    $("roleReveal").addEventListener("pointerdown", release);
+    // Never leave the role on screen if focus/visibility is lost.
+    window.addEventListener("blur", release);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
+  })();
 
   // Rules modal
   $("rulesBody").innerHTML = RULES_HTML();

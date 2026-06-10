@@ -460,6 +460,14 @@ body {
 .pcard.dim { opacity: 0.4; }
 .hand-hint { text-align: center; color: var(--muted); font-size: 13px; margin-top: 12px; }
 
+.wait-names {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* Vote result reveal */
 .vote-results { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .vres {
@@ -516,6 +524,53 @@ body {
 .rr-role.fascist { color: var(--fascist); }
 .rr-role.hitler { color: var(--accent); }
 
+/* ===================== PEEK ROLE ===================== */
+.peek-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 50;
+  padding: 12px clamp(16px, 5vw, 28px) calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 60%, rgba(20, 17, 15, 0));
+  display: flex; justify-content: center;
+}
+.peek-btn {
+  width: 100%;
+  max-width: var(--maxw);
+  min-height: var(--tap);
+  padding: 0 18px;
+  border: 1px solid var(--gold);
+  border-radius: var(--r-pill);
+  background: var(--gold-soft);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+  transition: background 0.14s ease, transform 0.06s ease;
+}
+.peek-btn:active { background: rgba(201, 162, 75, 0.26); transform: scale(0.99); }
+
+/* Give content room so the sticky bar never hides the Leave button. */
+body.in-game .app { padding-bottom: 108px; }
+
+.role-reveal {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(8, 6, 5, 0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; padding: 24px;
+  animation: fade 0.14s ease;
+}
+.role-reveal-inner { width: 100%; max-width: 460px; }
+.role-reveal-inner .role-card { margin-top: 0; }
+.role-reveal-hint {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted);
+}
+
 /* ===================== TOAST ===================== */
 .toast {
   position: fixed;
@@ -533,6 +588,7 @@ body {
   animation: toastIn 0.2s ease;
 }
 @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(16px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+body.in-game .toast { bottom: 88px; }
 
 /* ===================== MODAL ===================== */
 .modal {
