@@ -72,6 +72,7 @@
   let hostConn = null;
   let publicState = null;   // last snapshot received (or built locally if host)
   let reconnectTimer = null;
+  let wasKicked = false;    // set when the host removes us; blocks auto-reconnect
 
   /* ============================================================
      PEER SETUP
@@ -161,8 +162,25 @@
     broadcast();
   }
 
+  // Host removes a player while still in the lobby (before the game starts).
+  function hostKickPlayer(key) {
+    if (!isHost || !hostState || hostState.phase !== "lobby") return;
+    const p = hostState.players[key];
+    if (!p || p.isHost) return;
+    const c = conns.get(p.connId);
+    if (c && c.open) {
+      try { c.send({ t: "kicked" }); } catch (e) {}
+      // Let the message flush before tearing down the connection.
+      setTimeout(() => { try { c.close(); } catch (e) {} }, 200);
+    }
+    conns.delete(p.connId);
+    delete hostState.players[key];
+    broadcast();
+  }
+
   /* ---------------- CLIENT: join game ---------------- */
   async function clientJoin(name, code) {
+    wasKicked = false;
     isHost = false;
     myName = name;
     roomCode = code;
@@ -192,7 +210,7 @@
   }
 
   function scheduleReconnect() {
-    if (isHost) return;
+    if (isHost || wasKicked) return;
     if (reconnectTimer) return;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -218,6 +236,16 @@
       case "toast":
         toast(msg.msg);
         break;
+      case "kicked": {
+        // Removed from the lobby — but not banned. Send them home with the
+        // room code preserved so they can rejoin in one tap if they want.
+        wasKicked = true;
+        const lastCode = roomCode || "";
+        cleanupAll();
+        if (lastCode) $("codeInput").value = lastCode;
+        toast("The host removed you. Tap Join to rejoin.");
+        break;
+      }
     }
   }
 
@@ -780,7 +808,7 @@
       numPlayers: S.numPlayers,
       players,
       lobbyPlayers: Object.keys(S.players).map((k) => ({
-        name: S.players[k].name, isHost: S.players[k].isHost, connected: S.players[k].connected,
+        key: k, name: S.players[k].name, isHost: S.players[k].isHost, connected: S.players[k].connected,
       })),
 
       presidentKey: S.presidentKey,
@@ -939,11 +967,19 @@
     ul.innerHTML = "";
     list.forEach((p) => {
       const li = document.createElement("li");
+      const right = p.isHost
+        ? '<span class="pl-tag">Host</span>'
+        : (isHost ? `<button class="pl-kick" data-k="${esc(p.key)}">Kick</button>` : "");
       li.innerHTML = `<span class="pl-dot ${p.connected ? "" : "off"}"></span>
         <span class="pl-name">${esc(p.name)}</span>
-        ${p.isHost ? '<span class="pl-tag">Host</span>' : ""}`;
+        ${right}`;
       ul.appendChild(li);
     });
+    if (isHost) {
+      ul.querySelectorAll(".pl-kick").forEach((b) => {
+        b.onclick = () => hostKickPlayer(b.dataset.k);
+      });
+    }
 
     const canStart = isHost && list.length >= 5 && list.length <= 10;
     $("btnStart").classList.toggle("hidden", !isHost);
@@ -1083,6 +1119,7 @@
     const inGame = !!(you && you.role && publicState.phase !== "lobby" && publicState.phase !== "gameover");
     document.body.classList.toggle("in-game", inGame);
     $("peekBar").classList.toggle("hidden", !inGame);
+    if (inGame) $("peekCode").textContent = publicState.roomCode || roomCode || "----";
     if (!inGame) hideRolePeek();
   }
 
@@ -1174,16 +1211,19 @@
         `Government: ${presN} / ${chanN}. ${wait}${stillOut}`);
       return;
     }
-    if (you.hasVoted) {
-      el.innerHTML = waitingPanel("Vote", "Vote cast",
-        `You voted <b>${you.myVote === "ja" ? "Ja" : "Nein"}</b>. ${wait}${stillOut}`);
-      return;
-    }
+    // The buttons stay live for everyone until the last vote is in, so players
+    // can change their mind. Their current choice is highlighted.
+    const jaSel = you.myVote === "ja" ? "sel" : "";
+    const neinSel = you.myVote === "nein" ? "sel" : "";
+    const govLine = `President <b>${presN}</b> &nbsp;·&nbsp; Chancellor <b>${chanN}</b>`;
+    const body = you.hasVoted
+      ? `${govLine}<span class="vote-changeable">You voted <b>${you.myVote === "ja" ? "Ja" : "Nein"}</b> — tap to change until everyone has voted.</span>`
+      : govLine;
     el.innerHTML = panel("Vote", "Elect this government?",
-      `President <b>${presN}</b> &nbsp;·&nbsp; Chancellor <b>${chanN}</b>`,
+      body,
       `<div class="vote-row">
-        <button class="vote-btn ja" id="vJa">Ja</button>
-        <button class="vote-btn nein" id="vNein">Nein</button>
+        <button class="vote-btn ja ${jaSel}" id="vJa">Ja</button>
+        <button class="vote-btn nein ${neinSel}" id="vNein">Nein</button>
       </div>${stillOut}`);
     $("vJa").onclick = () => dispatch({ t: "vote", vote: "ja" });
     $("vNein").onclick = () => dispatch({ t: "vote", vote: "nein" });

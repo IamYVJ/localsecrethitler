@@ -81,9 +81,12 @@
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Sticky peek button (only during a game) -->
+  <!-- Sticky peek button + room code (only during a game) -->
   <div id="peekBar" class="peek-bar hidden">
-    <button id="peekBtn" class="peek-btn">Hold to view your secret role</button>
+    <div class="peek-inner">
+      <button id="peekBtn" class="peek-btn">Hold to view your secret role</button>
+      <div class="peek-code">Room <span id="peekCode">----</span></div>
+    </div>
   </div>
 
   <!-- Private role reveal overlay (shown only while peeking) -->
