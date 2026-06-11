@@ -1354,8 +1354,8 @@
     const roles = (S.revealRoles || []).map((r) =>
       `<div class="rr">${esc(r.name)}<span class="rr-role ${r.role}">${r.role}</span></div>`).join("");
     let actions = "";
-    if (you.isHost) actions = `<button class="btn btn-primary" id="aAgain">Back to lobby</button>`;
-    else actions = `<div class="hint-row">Waiting for the host…</div>`;
+    if (you.isHost) actions = `<button class="btn btn-primary" id="aAgain">Play again</button>`;
+    else actions = `<div class="hint-row">Waiting for the host to start a new game…</div>`;
 
     el.innerHTML = `<div class="gameover ${cls}">
       <div class="panel-kicker">${esc(S.winReason)}</div>
