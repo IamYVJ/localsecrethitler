@@ -1509,9 +1509,10 @@
     document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
   })();
 
-  // Rules modal
+  // Rules modal — reachable from home, lobby, and during a game.
   $("rulesBody").innerHTML = RULES_HTML();
-  $("btnRulesHome").onclick = () => $("rulesModal").classList.remove("hidden");
+  const openRules = () => $("rulesModal").classList.remove("hidden");
+  document.querySelectorAll(".js-rules").forEach((b) => { b.onclick = openRules; });
   $("btnCloseRules").onclick = () => $("rulesModal").classList.add("hidden");
   $("rulesModal").addEventListener("click", (e) => {
     if (e.target.id === "rulesModal") $("rulesModal").classList.add("hidden");
