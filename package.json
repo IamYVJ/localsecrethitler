@@ -1,0 +1,18 @@
+{
+  "name": "localsecrethitler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Secret Hitler — a social deduction party game. Peer-to-peer over your local network by default, with an optional authoritative-server hosting mode that shares the same rules engine.",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node scripts/test-engine.mjs && node scripts/test-server.mjs",
+    "test:live": "node scripts/test-live.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

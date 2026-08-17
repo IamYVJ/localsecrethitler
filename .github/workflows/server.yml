@@ -1,0 +1,67 @@
+# ============================================================================
+# .github/workflows/server.yml — build the Secret Hitler game server as a
+# linux/arm64 image and push it to GHCR (public), so the Raspberry Pi pulls it
+# with no login. The GitHub Pages CLIENT deploys separately; this workflow only
+# covers the server and the shared rules engine it bundles.
+#
+# Triggers on pushes to main that touch the server, the shared engine, either
+# manifest, or this workflow itself — plus a manual button.
+#
+# package-lock.json is in the list because the Dockerfile installs from it with
+# `npm ci`. Omitting it would let a lockfile-only change — an `npm audit fix`,
+# say — leave the deployed image pinned to the OLD dependency tree with nothing
+# to show that the fix never actually shipped.
+# ============================================================================
+name: server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'js/engine.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/server.yml'
+  workflow_dispatch: {}
+
+env:
+  IMAGE: ghcr.io/iamyvj/secrethitler-server
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          platforms: linux/arm64
+          push: true
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

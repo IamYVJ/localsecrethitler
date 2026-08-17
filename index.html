@@ -29,7 +29,9 @@
       </div>
 
       <div class="stack">
-        <button id="btnCreate" class="btn btn-primary">Create game</button>
+        <button id="btnCreate" class="btn btn-primary">Host on this phone</button>
+        <button id="btnCreateServer" class="btn hidden">Host on server</button>
+        <div id="serverPill" class="server-pill hidden" role="button" tabindex="0"></div>
 
         <div class="card">
           <div class="card-label">Join a game</div>
@@ -80,6 +82,12 @@
 
   </div>
 
+  <!-- Connection banner: only visible while a transport is down or gone for good -->
+  <div id="netBanner" class="net-banner hidden">
+    <span id="netBannerText"></span>
+    <button id="btnNetRetry" class="net-banner-btn hidden">Retry</button>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
@@ -106,7 +114,10 @@
     </div>
   </div>
 
+  <!-- PeerJS powers the offline/same-Wi-Fi transport. It is a classic script on
+       purpose: script.js is a module, and modules are deferred, so `window.Peer`
+       is guaranteed to exist by the time any of our code runs. -->
   <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-  <script src="script.js"></script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>
