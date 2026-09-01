@@ -218,6 +218,23 @@ body {
 }
 .foot a { color: var(--muted); }
 
+/* ---------------- Visitor footnote ----------------
+   Same fine-print treatment as .foot above — no new colours, fonts or sizes.
+
+   Deliberately NO `display` property. The element ships with the `hidden`
+   attribute and is unhidden only once a real count arrives; any `display` here
+   would outrank `hidden` and show a bare em dash to every visitor whose
+   adblocker eats the request. */
+.visitor-counter {
+  text-align: center;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  margin: 28px 0 0;
+}
+.visitor-count { color: var(--muted); }
+
 /* ---------------- Server-mode status pill ----------------
    Tappable: a failed probe is often just a slow network, so the player can
    re-run it without reloading. Deliberately quiet — server mode is optional,

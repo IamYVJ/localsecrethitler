@@ -80,6 +80,15 @@
       <button id="btnLeaveGame" class="btn btn-ghost">Leave game</button>
     </section>
 
+    <!-- Visitor footnote. A SIBLING of the three views on purpose: every view's
+         inner container (#board, #action, #logList, #lobbyPlayers) is rebuilt with
+         innerHTML on each render, so a counter placed inside one would be destroyed
+         on the next redraw. .app itself is never cleared.
+         Starts hidden and is revealed only once a real number arrives. -->
+    <p class="visitor-counter" hidden>
+      <span id="visitor-count" class="visitor-count">&mdash;</span> visitors
+    </p>
+
   </div>
 
   <!-- Connection banner: only visible while a transport is down or gone for good -->
@@ -119,5 +128,14 @@
        is guaranteed to exist by the time any of our code runs. -->
   <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script type="module" src="script.js"></script>
+
+  <!-- Pageview beacon. One GoatCounter site is shared across projects: counts are
+       per-path, so this repo separates itself via its own pathname. There is no
+       service worker here, so nothing can answer this from cache. -->
+  <script
+    data-goatcounter="https://yvj.goatcounter.com/count"
+    async
+    src="//gc.zgo.at/count.js">
+  </script>
 </body>
 </html>

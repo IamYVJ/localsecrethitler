@@ -697,6 +697,66 @@ function RULES_HTML() {
 }
 
 /* ============================================================
+   VISITOR FOOTNOTE
+   Purely decorative. Every failure path leaves the footnote hidden rather than
+   showing a broken placeholder, so an adblocker, an offline load, or the
+   "Allow adding visitor counts on your website" setting being off all degrade to
+   simply nothing.
+   ============================================================ */
+function showVisitorCount() {
+  const box = document.querySelector('.visitor-counter');
+  const out = $('visitor-count');
+  if (!box || !out) return;
+
+  // Derive the host from the beacon tag so the site code lives in exactly one place.
+  const tag = document.querySelector('script[data-goatcounter]');
+  const endpoint = tag && tag.dataset.goatcounter;
+  if (!endpoint) return;
+
+  // Per-path, NOT /counter/TOTAL.json — TOTAL sums every page on the GoatCounter
+  // site and would report the other games' traffic as if it were this one's.
+  //
+  // Read live rather than pinned to a constant: this app has no client-side path
+  // routing (no pushState/hash/popstate anywhere — navigating only toggles the
+  // .hidden class on the three views), so location.pathname cannot change and
+  // cannot swap the number out from under us.
+  //
+  // pathname only, deliberately WITHOUT location.search. There is no
+  // <link rel="canonical"> in index.html, so count.js files the view under
+  // pathname + search. The asymmetry is intentional: a visitor arriving with
+  // tracking params (?fbclid=…) has their view recorded under that longer path but
+  // is still shown the aggregate for the clean path. Matching count.js exactly
+  // would 404 for precisely those visitors and hide the counter from them.
+  const path = window.location.pathname;
+
+  // ?start= is a documented parameter (all-time is the default, so this does not
+  // change WHAT is counted) that is ALSO part of the response's cache key. It is
+  // pinned for one specific reason: a path with no data yet answers 404, and
+  // GoatCounter caches that 404 for up to four hours — so the bare URL can sit on
+  // "no data" for hours AFTER the first real visit lands, hiding the counter on a
+  // fresh deploy. A distinct cache key sidesteps a 404 cached before data existed.
+  //
+  // Keep it a FIXED date that predates this project's first-ever pageview. Never a
+  // relative period like `week` or `year` — those are rolling windows that would
+  // silently stop being an all-time count. One constant value also means every
+  // visitor shares a single cached response instead of forcing a recompute per request.
+  const START = '2026-01-01';
+
+  fetch(`${endpoint.replace(/\/count$/, '')}/counter/${encodeURIComponent(path)}.json?start=${START}`)
+    .then((res) => (res.ok ? res.json() : Promise.reject(new Error('bad status'))))
+    .then((data) => {
+      // `count` arrives pre-formatted with thousands separators ("1,234") — render
+      // as-is. GoatCounter caches this response for ~4h, so a fresh visit will not
+      // move the number immediately; that is expected, not a bug.
+      if (data && data.count != null) {
+        out.textContent = String(data.count);
+        box.hidden = false;
+      }
+    })
+    .catch(() => { /* purely decorative: leave the footnote hidden on every failure */ });
+}
+
+/* ============================================================
    BOOT
    ============================================================ */
 net.bind({ render, toast, home: showHome });
@@ -707,3 +767,4 @@ wireUI();
 if (!net.tryResume()) showHome(null);
 render();
 if (serverConfigured()) net.probeServer();
+showVisitorCount();
