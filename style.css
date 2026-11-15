@@ -733,3 +733,50 @@ body.in-game .toast { bottom: 88px; }
   .modal { align-items: center; padding: 24px; }
   .modal-card { border-radius: 18px; }
 }
+
+/* ===================== TV / SPECTATOR MODE =====================
+   body.tv is set only on a watch-only screen. The phone-first layout stays the
+   default; on a wide screen the board and the status column sit side by side
+   and everything is scaled up for reading from across a room. */
+.watch-hint { color: var(--faint); font-size: 12.5px; text-align: center; margin-top: 6px; }
+
+.tv-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.tv-code { font-family: var(--mono); font-size: 14px; color: var(--muted); letter-spacing: 0.1em; }
+.tv-code span { color: var(--gold); letter-spacing: 0.24em; font-weight: 700; }
+
+.tv-tally {
+  font-family: var(--serif); font-size: 56px; line-height: 1; text-align: center; margin-top: 4px;
+}
+.tv-tally span { color: var(--muted); font-size: 0.4em; margin-left: 6px; }
+
+@media (min-width: 1000px) {
+  body.tv { --maxw: 1480px; }
+  body.tv .game-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+  }
+  body.tv .action { margin-top: 0; }
+  body.tv .board { gap: 16px; }
+  body.tv .gov-name { font-size: 34px; }
+  body.tv .card-label, body.tv .track-title, body.tv .track-meta { font-size: 13px; }
+  body.tv .slots { gap: 10px; }
+  /* Height-bound, not width-bound: on a 16:9 screen a 2:3 card would push the
+     player list off the bottom. */
+  body.tv .slot { aspect-ratio: auto; height: clamp(90px, 16vh, 170px); }
+  body.tv .slot .pw { font-size: 11px; }
+  body.tv .pchip { font-size: 17px; padding: 8px 14px; }
+  body.tv .tdot { width: 20px; height: 20px; }
+  body.tv .panel { padding: 26px; }
+  body.tv .panel-title { font-size: 38px; }
+  body.tv .panel-body, body.tv .wait-names { font-size: 18px; }
+  body.tv .vres { font-size: 16px; }
+  body.tv .log-list { max-height: 46vh; }
+  body.tv .log-list li { font-size: 15px; }
+  body.tv .tv-code { font-size: 20px; }
+  body.tv .lobby-head .room-code { font-size: 7rem; }
+}

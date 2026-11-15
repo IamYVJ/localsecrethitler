@@ -75,6 +75,13 @@ All players must be reachable to each other over the network (typical home Wi-Fi
 works). If you reload or your phone drops, just **rejoin with the same name and
 code** — the host restores your role and seat.
 
+### TV / spectator mode
+Put the board on a big screen: on a laptop, smart-TV browser or cast tab, enter
+the room code and tap **Watch on a TV** (no name needed), or open the site with
+`?tv=CODE` on the end of the URL. A spectator takes no seat, can join at any
+point in the game, and receives **public state only** — it never gets a private
+slice, so no role or card can reach the shared screen. Up to 8 screens per room.
+
 ---
 
 ## Networking model

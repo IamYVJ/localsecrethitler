@@ -52,6 +52,7 @@ export const app = {
   name: '',
   meId: null,
   isOwner: false,
+  spectator: false,       // watch-only TV screen: public state, no seat, no actions
 
   pub: null,              // last public projection
   priv: null,             // last private projection (this device only)
@@ -115,6 +116,7 @@ function saveSession() {
     v: APP_VERSION, at: Date.now(),
     mode: app.mode, role: app.role, intent: app.intent,
     code: app.code, name: app.name, meId: app.meId, isOwner: app.isOwner,
+    spectator: app.spectator,
   };
   if (app.mode === 'p2p' && app.role === 'host' && engine) s.snapshot = engine.serialize();
   try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (_) { /* storage blocked */ }
@@ -191,6 +193,8 @@ let peer = null;                    // PeerJS instance (host or client)
 const conns = new Map();            // connId -> DataConnection
 const seatByConn = new Map();       // connId -> playerId
 const connBySeat = new Map();       // playerId -> connId
+const spectatorConns = new Map();   // connId -> DataConnection (TV screens, no seat)
+const MAX_SPECTATORS = 8;           // mirrors server/rooms.js
 
 let link = null;                    // active client link (p2p client or server)
 let reconnectTimer = null;
@@ -250,6 +254,10 @@ function hostBroadcast() {
       try { c.send({ t: 'state', pub, priv: engine.privateStateFor(seatId) }); } catch (_) { /* dropping */ }
     }
   }
+  // Spectators get the public projection only — never a private slice.
+  for (const c of spectatorConns.values()) {
+    if (c.open) { try { c.send({ t: 'state', pub, priv: null }); } catch (_) { /* dropping */ } }
+  }
 }
 
 function toastTo(id, message) {
@@ -308,6 +316,7 @@ function onHostConnection(conn) {
   conn.on('data', (msg) => {
     if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
     if (msg.t === 'join') { hostOnJoin(conn, msg); return; }
+    if (msg.t === 'spectate') { hostOnSpectate(conn); return; }
     const seatId = seatByConn.get(conn.peer);
     if (!seatId) return;   // not seated — nothing to act on
     hostApply(seatId, msg);
@@ -363,8 +372,21 @@ function hostOnJoin(conn, msg) {
   hostBroadcast();
 }
 
+function hostOnSpectate(conn) {
+  if (!engine) return;
+  const reject = (message) => { try { conn.send({ t: 'rejected', message }); } catch (_) { /* dropping */ } };
+  if (seatByConn.has(conn.peer) || spectatorConns.has(conn.peer)) { reject('This connection is already in the room.'); return; }
+  if (spectatorConns.size >= MAX_SPECTATORS) { reject('This room already has the maximum number of screens watching.'); return; }
+  spectatorConns.set(conn.peer, conn);
+  try {
+    conn.send({ t: 'welcome', playerId: null, code: app.code, owner: false, spectator: true });
+    conn.send({ t: 'state', pub: engine.publicState(), priv: null });
+  } catch (_) { /* dropping */ }
+}
+
 function hostOnConnLost(connId) {
   conns.delete(connId);
+  if (spectatorConns.delete(connId)) return;
   const seatId = seatByConn.get(connId);
   if (!seatId) return;                          // stale handler — already replaced
   seatByConn.delete(connId);
@@ -382,6 +404,7 @@ function announce() {
   if (app.intent === 'create' && !app.code) {
     return { t: 'createRoom', name: app.name, clientId: clientId() };
   }
+  if (app.spectator) return { t: 'spectate', code: app.code };
   return { t: 'join', code: app.code, name: app.name, clientId: clientId() };
 }
 
@@ -471,6 +494,7 @@ function onLinkMessage(msg) {
       app.meId = msg.playerId;
       app.code = msg.code;
       app.isOwner = !!msg.owner;
+      app.spectator = !!msg.spectator;
       saveSession();
       hooks.render();
       break;
@@ -481,6 +505,10 @@ function onLinkMessage(msg) {
       hooks.render();
       break;
     case 'error':
+      // A server that predates TV mode answers `spectate` with a plain error
+      // instead of `rejected/no-room`. Before any state has arrived that can only
+      // mean "this server cannot watch this code", so try peer-to-peer for it.
+      if (app.spectator && !app.pub && link && link.kind === 'server' && fallbackToP2P()) break;
       hooks.toast(String(msg.message || 'That move was not allowed.'));
       break;
     case 'rejected':
@@ -577,7 +605,8 @@ function fatal(message, opts = {}) {
 export function reset() {
   destroyLink();
   for (const c of conns.values()) { try { c.close(); } catch (_) { /* already closing */ } }
-  conns.clear(); seatByConn.clear(); connBySeat.clear();
+  for (const c of spectatorConns.values()) { try { c.close(); } catch (_) { /* already closing */ } }
+  conns.clear(); seatByConn.clear(); connBySeat.clear(); spectatorConns.clear();
   try { if (peer) peer.destroy(); } catch (_) { /* already gone */ }
   peer = null;
   engine = null;
@@ -585,7 +614,7 @@ export function reset() {
   clearSession();
 
   app.mode = null; app.role = null; app.intent = null;
-  app.code = null; app.meId = null; app.isOwner = false;
+  app.code = null; app.meId = null; app.isOwner = false; app.spectator = false;
   app.pub = null; app.priv = null;
   app.netStatus = 'ok'; app.netTry = 0;
   app.triedP2PFallback = false;
@@ -660,6 +689,31 @@ export async function joinRoom(name, code) {
 }
 
 /**
+ * Watch a room as a TV / spectator screen. Same transport choice as joinRoom —
+ * server first, peer-to-peer fallback — but it takes no seat and needs no name,
+ * so it works mid-game and never counts toward the player limit.
+ */
+export async function spectateRoom(code) {
+  reset();
+  app.code = code; app.intent = 'join'; app.role = 'client'; app.name = '';
+  app.spectator = true;
+  app.kicked = false;
+
+  if (serverConfigured() && app.serverProbe !== 'down') {
+    app.mode = 'server';
+    app.triedP2PFallback = false;
+    link = serverLink();
+    link.open();
+    return true;
+  }
+  app.mode = 'p2p';
+  app.triedP2PFallback = true;
+  link = p2pClientLink();
+  await link.open();
+  return true;
+}
+
+/**
  * Restore a room after a reload. Called synchronously at boot, BEFORE the health
  * probe can resolve — otherwise a slow probe would decide the transport for a
  * room that already exists on the other one.
@@ -670,6 +724,7 @@ export function tryResume() {
 
   app.mode = s.mode; app.role = s.role; app.intent = s.intent;
   app.code = s.code; app.name = s.name; app.meId = s.meId; app.isOwner = !!s.isOwner;
+  app.spectator = !!s.spectator;
   app.kicked = false;
   app.triedP2PFallback = true;    // a resume must not silently switch transport
 

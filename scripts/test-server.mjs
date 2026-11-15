@@ -506,6 +506,66 @@ for (const n of [6, 7, 8, 9, 10]) {
 }
 
 // ---------------------------------------------------------------------------
+// Spectator / TV mode
+// ---------------------------------------------------------------------------
+{
+  const ctx = newCtx();
+  const tv0 = stub('tv0');
+  wire(ctx, tv0, { t: 'spectate', code: 'ZZZZ' });
+  eq(tv0.last('rejected') && tv0.last('rejected').reason, 'no-room',
+    'spectating an unknown code says no-room, so the client can fall back to p2p');
+
+  const { socks, code, room, byId } = seatRoom(ctx, 5);
+  const tv = stub('tv');
+  wire(ctx, tv, { t: 'spectate', code: code.toLowerCase() });
+  const w = tv.last('welcome');
+  assert(w && w.spectator === true && w.playerId === null, 'a spectator is welcomed with no seat');
+  eq(room.engine.players.length, 5, 'a spectator does not take a seat');
+  eq(tv.last('state').priv, null, 'a spectator gets no private slice in the lobby');
+
+  wire(ctx, tv, { t: 'start' });
+  eq(room.engine.phase, PHASES.LOBBY, 'a spectator cannot start the game');
+  wire(ctx, tv, { t: 'join', code, name: 'sneaky', clientId: 'cid-tv-00000' });
+  eq(room.engine.players.length, 5, 'a spectator socket cannot also take a seat');
+
+  wire(ctx, socks[0], { t: 'start' });
+  assert(room.engine.phase !== PHASES.LOBBY, 'the game starts with a spectator watching');
+  const st = tv.last('state');
+  eq(st.priv, null, 'a spectator never gets a private slice mid-game');
+  assert(!JSON.stringify(st).match(/"role"|presCards|chanCards|knownAllies/),
+    'spectator state carries no roles or hands');
+
+  const late = stub('late');
+  wire(ctx, late, { t: 'spectate', code });
+  assert(late.last('welcome') && late.last('state'), 'a spectator can join mid-game');
+
+  assert(drive(ctx, room, byId), 'a game with spectators plays to completion');
+  const end = tv.last('state').pub;
+  eq(end.phase, PHASES.GAMEOVER, 'the spectator sees game over');
+  eq(end.revealRoles.length, 5, 'and the public role reveal');
+
+  // Spectators alone do not keep a room alive.
+  socks.forEach((s) => handleClose(ctx, s));
+  socks.forEach((s) => s.close());
+  eq(room.hasOpenConns(), false, 'spectators do not count as live seats');
+  room.lastActive = 0;
+  ctx.manager.sweep();
+  eq(ctx.manager.size, 0, 'a room watched only by a TV is still collected');
+  eq(tv.readyState, 3, 'and the TV socket is closed with it');
+}
+
+{
+  const ctx = newCtx();
+  const { code, room } = seatRoom(ctx, 1);
+  const tvs = [];
+  for (let i = 0; i < 9; i++) { const s = stub(`tv${i}`); wire(ctx, s, { t: 'spectate', code }); tvs.push(s); }
+  eq(room.spectators.size, 8, 'spectators are capped per room');
+  assert(tvs[8].last('rejected'), 'the spectator over the cap is rejected');
+  handleClose(ctx, tvs[0]);
+  eq(room.spectators.size, 7, 'a closed spectator frees its slot');
+}
+
+// ---------------------------------------------------------------------------
 if (failures.length) {
   console.error(`server: ${passed} passed, ${failures.length} FAILED`);
   failures.forEach((f) => console.error(`  ✗ ${f}`));

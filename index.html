@@ -37,6 +37,8 @@
           <div class="card-label">Join a game</div>
           <input id="codeInput" class="input input-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" />
           <button id="btnJoin" class="btn">Join</button>
+          <button id="btnWatch" class="btn btn-ghost">Watch on a TV</button>
+          <div class="watch-hint">No seat, no name needed &mdash; shows the public board on a big screen.</div>
         </div>
       </div>
 
@@ -67,14 +69,25 @@
 
     <!-- ===================== GAME ===================== -->
     <section id="viewGame" class="view hidden">
+      <!-- TV / spectator header: only shown on a watch-only screen -->
+      <div id="tvHead" class="tv-head hidden">
+        <div class="kicker">Spectating &middot; public board only</div>
+        <div class="tv-code">Room <span id="tvCode">----</span></div>
+      </div>
+      <div class="game-grid">
+      <div class="game-main">
       <!-- Public board -->
       <div id="board" class="board"></div>
       <!-- Contextual action panel -->
+      </div>
+      <div class="game-side">
       <div id="action" class="action"></div>
       <!-- Event log -->
       <div id="logCard" class="card log-card">
         <div class="card-label">Event log</div>
         <ul id="logList" class="log-list"></ul>
+      </div>
+      </div>
       </div>
       <button class="link-btn js-rules">How to play</button>
       <button id="btnLeaveGame" class="btn btn-ghost">Leave game</button>

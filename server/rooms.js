@@ -34,6 +34,10 @@ const LOBBY_TTL_MS = Number(process.env.LOBBY_TTL_MS) || 60 * 60 * 1000;
 
 const WS_OPEN = 1; // ws readyState for an open socket
 
+// Spectators (TV mode) hold no seat, so nothing in the engine bounds them. Cap
+// them per room so one room cannot soak up the server's connection budget.
+export const MAX_SPECTATORS = Number(process.env.MAX_SPECTATORS) || 8;
+
 export function send(ws, msg) {
   try {
     if (ws && ws.readyState === WS_OPEN) ws.send(JSON.stringify(msg));
@@ -48,10 +52,13 @@ export class Room {
     this.ownerId = null;       // current playerId of the owner
     this.engine = new GameEngine();
     this.conns = new Map();    // playerId -> ws
+    this.spectators = new Set(); // ws — public state only, never a seat
     this.createdAt = Date.now();
     this.lastActive = this.createdAt;
   }
 
+  // Only SEATED sockets keep a room alive: a TV left on in an empty room must
+  // not hold a room slot forever.
   hasOpenConns() {
     for (const ws of this.conns.values()) if (ws.readyState === WS_OPEN) return true;
     return false;
@@ -64,6 +71,10 @@ export class Room {
       try { ws.close(); } catch (_) { /* already closing */ }
     }
     this.conns.clear();
+    for (const ws of this.spectators) {
+      try { ws.close(); } catch (_) { /* already closing */ }
+    }
+    this.spectators.clear();
   }
 }
 
@@ -118,7 +129,7 @@ function genCode() {
  * Give every socket the public state plus ONLY its own private slice. This split
  * is the whole reason hidden roles stay hidden in server mode: publicState()
  * contains no role, party, hand, peek or investigation, and privateStateFor(id)
- * is sent down exactly one socket.
+ * is sent down exactly one socket. Spectators receive the public half only.
  */
 export function broadcastState(room) {
   const e = room.engine;
@@ -127,6 +138,8 @@ export function broadcastState(room) {
     if (ws.readyState !== WS_OPEN) continue;
     send(ws, { t: 'state', pub, priv: e.privateStateFor(playerId) });
   }
+  // Spectators get the public projection and nothing else — priv is always null.
+  for (const ws of room.spectators) send(ws, { t: 'state', pub, priv: null });
 }
 
 /** The server's analogue of the browser host's broadcast(). */

@@ -11,7 +11,8 @@
 // those controls now travel over the wire instead of being local calls.
 //
 // Per-connection identity lives on the ws object:
-//   ws._id        playerId (the engine's seat id)
+//   ws._id        playerId (the engine's seat id) — unset for a spectator
+//   ws._spectator true for a watch-only TV socket
 //   ws._clientId  stable per-device secret sent by the client
 //   ws._code      room code this socket is attached to
 //
@@ -21,6 +22,7 @@
 // client -> server
 //   createRoom     { name, clientId }            create a room and take seat 1
 //   join           { code, name, clientId }      take or reclaim a seat
+//   spectate       { code }                      watch-only (TV mode), any phase
 //   start          {}                            (owner)
 //   kick           { targetId }                  (owner, lobby only)
 //   playAgain      {}                            (owner, game over only)
@@ -36,7 +38,7 @@
 //   powerDone      {}                            president
 //
 // server -> client
-//   welcome  { playerId, code, owner }
+//   welcome  { playerId, code, owner, spectator? }   spectator: playerId null
 //   state    { pub, priv }
 //   rejected { message, reason? }  fatal for this attempt — bad code, name taken,
 //                                  full. reason='no-room' tells the client the
@@ -48,7 +50,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { PHASES, cleanName } from '../js/engine.js';
-import { sync, send } from './rooms.js';
+import { sync, send, MAX_SPECTATORS } from './rooms.js';
 
 function safeParse(raw) {
   try {
@@ -79,8 +81,13 @@ export function handleMessage(ctx, ws, raw) {
   switch (msg.t) {
     case 'createRoom': return onCreateRoom(ctx, ws, msg);
     case 'join': return onJoin(ctx, ws, msg);
+    case 'spectate': return onSpectate(ctx, ws, msg);
     default: break;
   }
+
+  // A spectator has no seat. The engine would refuse an unknown id anyway, but
+  // refusing here keeps a TV socket from ever reaching an engine intent.
+  if (ws._spectator) { send(ws, { t: 'error', message: 'Spectators can only watch.' }); return; }
 
   const room = ws._code ? ctx.manager.get(ws._code) : null;
   if (!room) { send(ws, { t: 'error', message: 'Not in a room.' }); return; }
@@ -256,7 +263,36 @@ function onJoin(ctx, ws, msg) {
   sync(room);
 }
 
+function onSpectate(ctx, ws, msg) {
+  const code = normCode(msg.code);
+  const room = ctx.manager.get(code);
+  if (!room) {
+    send(ws, { t: 'rejected', reason: 'no-room', message: 'No game found with that code.' });
+    return;
+  }
+  if (ws._code) {
+    send(ws, { t: 'rejected', message: 'This connection is already in a room.' });
+    return;
+  }
+  if (room.spectators.size >= MAX_SPECTATORS) {
+    send(ws, { t: 'rejected', message: 'This room already has the maximum number of screens watching.' });
+    return;
+  }
+  ws._code = code;
+  ws._spectator = true;
+  room.spectators.add(ws);
+  send(ws, { t: 'welcome', playerId: null, code, owner: false, spectator: true });
+  // Only this socket needs the state — nothing changed for anyone else. A full
+  // broadcast would let screens joining repeatedly fan out to the whole room.
+  send(ws, { t: 'state', pub: room.engine.publicState(), priv: null });
+}
+
 export function handleClose(ctx, ws) {
+  if (ws._spectator) {
+    const room = ws._code ? ctx.manager.get(ws._code) : null;
+    if (room) room.spectators.delete(ws);
+    return;
+  }
   if (!ws._code || !ws._id) return;
   const room = ctx.manager.get(ws._code);
   if (!room) return;

@@ -36,6 +36,7 @@ function showHome(keepCode) {
 }
 
 function routeView() {
+  document.body.classList.toggle('tv', !!(app.spectator && app.code));
   if (!app.code || !app.pub) { show('viewHome'); return; }
   if (app.pub.phase === PHASES.LOBBY) { show('viewLobby'); renderLobby(); }
   else { show('viewGame'); renderGame(); }
@@ -94,7 +95,7 @@ function renderNetBanner() {
   b.classList.remove('hidden');
   b.classList.toggle('is-lost', lost);
   $('netBannerText').textContent = lost
-    ? 'Connection lost. Your seat is still held.'
+    ? (app.spectator ? 'Connection lost.' : 'Connection lost. Your seat is still held.')
     : `Reconnecting… ${app.netTry}/${net.RECONNECT_TRIES}`;
   $('btnNetRetry').classList.toggle('hidden', !lost);
 }
@@ -135,8 +136,13 @@ function renderLobby() {
     ? `Need ${MIN_PLAYERS - list.length} more`
     : (list.length > MAX_PLAYERS ? 'Too many players' : 'Start game');
   $('lobbyWaitMsg').classList.toggle('hidden', host);
+  $('btnLeaveLobby').textContent = app.spectator ? 'Stop watching' : 'Leave';
 
   const onServer = app.mode === 'server';
+  if (app.spectator) {
+    $('lobbyHint').textContent = `TV mode — this screen shows public information only. Players join on their own phones with code ${app.code}.`;
+    return;
+  }
   $('lobbyHint').textContent = host
     ? (onServer
       ? `Share this code. Hosted on the server, so players can join from anywhere. Start once ${MIN_PLAYERS}–${MAX_PLAYERS} have joined.`
@@ -149,6 +155,9 @@ function renderLobby() {
    ============================================================ */
 function renderGame() {
   if (!app.pub || app.pub.phase === PHASES.LOBBY) return;
+  $('tvHead').classList.toggle('hidden', !app.spectator);
+  if (app.spectator) $('tvCode').textContent = app.code || '----';
+  $('btnLeaveGame').textContent = app.spectator ? 'Stop watching' : 'Leave game';
   renderBoard();
   renderAction();
   renderLog();
@@ -289,6 +298,7 @@ function renderAction() {
   const S = app.pub;
   const you = app.priv;
   const el = $('action');
+  if (app.spectator) { panelSpectator(el, S); return; }
   if (!you) { el.innerHTML = ''; return; }
 
   switch (S.phase) {
@@ -503,6 +513,52 @@ function panelGameOver(el, S) {
   if (host) $('aAgain').onclick = () => net.send({ t: 'playAgain' });
 }
 
+/* ---------------- spectator (TV) panel ----------------
+   Built ONLY from app.pub. A spectator never receives a private slice, so there
+   is nothing secret here to leak — this just narrates the public phase. */
+function panelSpectator(el, S) {
+  const pres = esc(nameOf(S.presidentId));
+  switch (S.phase) {
+    case PHASES.REVEAL:
+      el.innerHTML = waitingPanel('Setup', 'Roles are being dealt',
+        'Everyone is checking their secret role on their own phone…');
+      return;
+    case PHASES.NOMINATION:
+      el.innerHTML = waitingPanel('Election', 'Nomination', `${pres} is choosing a Chancellor…`);
+      return;
+    case PHASES.ELECTION: {
+      const w = S.voteWaiting;
+      const pending = ((w && w.pending) || []).map((id) => esc(nameOf(id)));
+      el.innerHTML = panel('Vote', 'Elect this government?',
+        `President <b>${pres}</b> &nbsp;·&nbsp; Chancellor <b>${esc(nameOf(S.nomineeId))}</b>`,
+        `<div class="tv-tally">${w ? `${w.voted}<span>/${w.total} voted</span>` : ''}</div>
+         <div class="wait-names">${pending.length ? `Waiting on: ${pending.join(', ')}` : 'All votes are in…'}</div>`);
+      return;
+    }
+    case PHASES.ELECTION_RESULT:
+      return panelElectionResult(el, S, { isPresident: false });
+    case PHASES.LEG_PRESIDENT:
+      el.innerHTML = waitingPanel('Legislative session', 'President is legislating',
+        `${pres} is discarding one policy in secret…`);
+      return;
+    case PHASES.LEG_CHANCELLOR:
+      el.innerHTML = waitingPanel('Legislative session', 'Chancellor is legislating',
+        `${esc(nameOf(S.chancellorId))} is enacting a policy in secret…`);
+      return;
+    case PHASES.VETO_PROMPT:
+      el.innerHTML = waitingPanel('Veto', 'Veto proposed', `Waiting for ${pres} to respond…`);
+      return;
+    case PHASES.EXECUTIVE:
+      el.innerHTML = waitingPanel('Executive action', POWER_LABEL[S.pendingPower] || 'Presidential power',
+        `${pres} is using a presidential power…`);
+      return;
+    case PHASES.GAMEOVER:
+      panelGameOver(el, S);
+      return;
+    default: el.innerHTML = '';
+  }
+}
+
 /* ---------------- render helpers ---------------- */
 function cardFace(c) {
   return `<div class="pcard ${c === 'L' ? 'L' : 'F'}"><span class="pcard-mark">${c === 'L' ? 'L' : 'F'}</span>${c === 'L' ? 'Liberal' : 'Fascist'}</div>`;
@@ -611,9 +667,19 @@ function wireUI() {
     $('btnJoin').disabled = false;
   };
 
+  $('btnWatch').onclick = async () => {
+    const code = $('codeInput').value.trim().toUpperCase();
+    if (code.length !== 4) { toast('Enter the 4-letter room code to watch.'); $('codeInput').focus(); return; }
+    $('btnWatch').disabled = true;
+    await net.spectateRoom(code);
+    $('btnWatch').disabled = false;
+  };
+
   $('btnStart').onclick = () => net.send({ t: 'start' });
   $('btnLeaveLobby').onclick = () => net.leaveRoom();
-  $('btnLeaveGame').onclick = () => { if (confirm('Leave the game?')) net.leaveRoom(); };
+  $('btnLeaveGame').onclick = () => {
+    if (app.spectator || confirm('Leave the game?')) net.leaveRoom();
+  };
   $('btnNetRetry').onclick = () => net.retryNow();
 
   // A failed probe is usually a slow network, not an outage — let them re-ask.
@@ -690,6 +756,12 @@ function RULES_HTML() {
       <li><b>Host on server</b> appears when a shared server is reachable. Players can then join from anywhere, and no one device has to stay awake.</li>
       <li>If you drop, your seat is held. Rejoin from the <i>same device and browser</i> to reclaim it — your role is tied to the device, not to your name.</li>
     </ul>
+    <h3>TV / spectator mode</h3>
+    <ul>
+      <li>Enter the room code and tap <b>Watch on a TV</b> on a laptop, smart-TV browser or cast tab. It takes no seat, needs no name, and can join mid-game.</li>
+      <li>The screen shows the public board only — tracks, government, votes once counted, the log. It never receives anyone's role or cards.</li>
+      <li>Tip: add <code>?tv=CODE</code> to the end of the address to start watching straight away.</li>
+    </ul>
     <h3>Privacy</h3>
     <ul>
       <li>Drawn policies show only on the President's / Chancellor's device. Investigations and peeks show only on the acting President's device.</li>
@@ -764,7 +836,20 @@ wireUI();
 
 // Resume BEFORE the probe is started: a room that already exists must not have
 // its transport decided by whichever health check happens to resolve first.
-if (!net.tryResume()) showHome(null);
+// ?tv=CODE opens straight into spectator mode — handy on a smart-TV browser
+// where typing is painful. A resumed session wins: a reload must not re-route.
+function tvCodeFromUrl() {
+  try {
+    const v = new URLSearchParams(window.location.search).get('tv');
+    const code = (v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    return code.length === 4 ? code : null;
+  } catch (_) { return null; }
+}
+
+if (!net.tryResume()) {
+  const tv = tvCodeFromUrl();
+  if (tv) { $('codeInput').value = tv; net.spectateRoom(tv); } else showHome(null);
+}
 render();
 if (serverConfigured()) net.probeServer();
 showVisitorCount();
